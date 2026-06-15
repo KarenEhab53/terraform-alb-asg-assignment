@@ -15,10 +15,7 @@ data "aws_ami" "amazon_linux" {
 # USE EXISTING ASSIGNMENT VPC
 # -------------------------
 data "aws_vpc" "default" {
-  filter {
-    name   = "tag:Name"
-    values = ["assignment-vpc"]
-  }
+  id = "vpc-06dddf02da769f0826"
 }
 
 # -------------------------
