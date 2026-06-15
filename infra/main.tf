@@ -26,30 +26,23 @@ data "aws_ami" "amazon_linux" {
 }
 
 # -------------------------
-# GET ONE SUBNET PER AZ
-# This guarantees multi-AZ coverage for the ALB
+# GET ALL SUBNETS IN DEFAULT VPC
 # -------------------------
-data "aws_subnets" "per_az" {
-  for_each = toset(data.aws_availability_zones.available.names)
-
+data "aws_subnets" "all" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
 
   filter {
-    name   = "availabilityZone"
-    values = [each.key]
+    name   = "defaultForAz"
+    values = ["true"]
   }
 }
 
 locals {
-  # Pick one subnet ID per AZ, then collect into a list
-  selected_subnets = [
-    for az, subnet_data in data.aws_subnets.per_az :
-    subnet_data.ids[0]
-    if length(subnet_data.ids) > 0
-  ]
+  # Take the first 2 default subnets (one per AZ by definition)
+  selected_subnets = slice(tolist(data.aws_subnets.all.ids), 0, 2)
 }
 
 # -------------------------
@@ -100,9 +93,7 @@ resource "aws_lb" "alb" {
   name               = "assignment-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_sg.id]
-
-  # Now guaranteed to have subnets across multiple AZs
-  subnets = local.selected_subnets
+  subnets            = local.selected_subnets
 }
 
 # -------------------------
@@ -155,8 +146,6 @@ resource "aws_autoscaling_group" "asg" {
   desired_capacity    = 2
   min_size            = 2
   max_size            = 4
-
-  # Same multi-AZ subnets used for the ALB
   vpc_zone_identifier = local.selected_subnets
 
   launch_template {
