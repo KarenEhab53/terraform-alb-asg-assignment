@@ -12,6 +12,7 @@ data "aws_vpc" "default" {
   default = true
 }
 
+# Get ALL real subnets in the VPC
 data "aws_subnets" "all" {
   filter {
     name   = "vpc-id"
@@ -19,7 +20,7 @@ data "aws_subnets" "all" {
   }
 }
 
-# Get real existing subnets only (NO fake AZ assumptions)
+# IMPORTANT: use ONLY existing subnet IDs
 locals {
   selected_subnets = data.aws_subnets.all.ids
 }
@@ -86,7 +87,9 @@ resource "aws_lb" "alb" {
   load_balancer_type = "application"
 
   security_groups = [aws_security_group.alb_sg.id]
-  subnets         = local.selected_subnets
+
+  # MUST use real subnets only
+  subnets = local.selected_subnets
 }
 
 # -------------------------
