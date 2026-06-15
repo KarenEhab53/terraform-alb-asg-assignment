@@ -12,24 +12,11 @@ data "aws_ami" "amazon_linux" {
 }
 
 # -------------------------
-# USE EXISTING ASSIGNMENT VPC
+# HARDCODED VPC & SUBNETS (assignment-vpc)
 # -------------------------
-data "aws_vpc" "default" {
-  id = "vpc-06dddf02da769f0826"
-}
-
-# -------------------------
-# GET ALL SUBNETS IN ASSIGNMENT VPC
-# -------------------------
-data "aws_subnets" "all" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
 locals {
-  selected_subnets = tolist(data.aws_subnets.all.ids)
+  vpc_id           = "vpc-06ddf02da769f0826"
+  selected_subnets = ["subnet-0283baf80511f750a", "subnet-04f99361cc3485b3d"]
 }
 
 # -------------------------
@@ -37,7 +24,7 @@ locals {
 # -------------------------
 resource "aws_security_group" "alb_sg" {
   name   = "alb-sg"
-  vpc_id = data.aws_vpc.default.id
+  vpc_id = local.vpc_id
 
   ingress {
     from_port   = 80
@@ -56,7 +43,7 @@ resource "aws_security_group" "alb_sg" {
 
 resource "aws_security_group" "ec2_sg" {
   name   = "ec2-sg"
-  vpc_id = data.aws_vpc.default.id
+  vpc_id = local.vpc_id
 
   ingress {
     from_port       = 80
@@ -90,7 +77,7 @@ resource "aws_lb_target_group" "tg" {
   name     = "assignment-tg"
   port     = 80
   protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default.id
+  vpc_id   = local.vpc_id
 
   health_check {
     path = "/"
