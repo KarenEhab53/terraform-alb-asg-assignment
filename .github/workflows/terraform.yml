@@ -1,0 +1,62 @@
+name: Iac Workflow (Terraform)
+run-name: terraform-${{ inputs.action }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        description: Select Terraform Action
+        options:
+          - apply
+          - destroy
+          - plan
+      env:
+        type: choice
+        description: Select Environment
+        options:
+          - dev
+          - prod
+
+jobs:
+  terraform-action:
+    name: Terraform Job
+    environment: ${{ inputs.env }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          cd infra
+          terraform init
+
+      - name: Terraform Plan
+        if: ${{ inputs.action == 'plan' }}
+        run: |
+          cd infra
+          terraform plan
+
+      - name: Terraform Apply
+        if: ${{ inputs.action == 'apply' }}
+        run: |
+          cd infra
+          terraform apply -auto-approve
+
+      - name: Terraform Destroy
+        if: ${{ inputs.action == 'destroy' }}
+        run: |
+          cd infra
+          terraform destroy -auto-approve
