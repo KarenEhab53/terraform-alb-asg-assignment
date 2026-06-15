@@ -1,20 +1,10 @@
 # -------------------------
-# PROVIDER
-# -------------------------
-provider "aws" {
-  region = "us-east-1"
-}
-
-# -------------------------
 # DEFAULT VPC
 # -------------------------
 data "aws_vpc" "default" {
   default = true
 }
 
-# -------------------------
-# GET ALL SUBNETS IN VPC
-# -------------------------
 data "aws_subnets" "all" {
   filter {
     name   = "vpc-id"
@@ -22,15 +12,11 @@ data "aws_subnets" "all" {
   }
 }
 
-# Get details of each subnet (to read AZs)
 data "aws_subnet" "details" {
   for_each = toset(data.aws_subnets.all.ids)
   id       = each.value
 }
 
-# -------------------------
-# PICK 2 DIFFERENT AZ SUBNETS (FIX FOR ALB)
-# -------------------------
 locals {
   az_map = {
     for s in data.aws_subnet.details :
@@ -41,7 +27,7 @@ locals {
 }
 
 # -------------------------
-# AMI (Amazon Linux 2)
+# AMI
 # -------------------------
 data "aws_ami" "amazon_linux" {
   most_recent = true
@@ -95,16 +81,14 @@ resource "aws_security_group" "ec2_sg" {
 }
 
 # -------------------------
-# APPLICATION LOAD BALANCER
+# ALB
 # -------------------------
 resource "aws_lb" "alb" {
   name               = "assignment-alb"
   load_balancer_type = "application"
 
   security_groups = [aws_security_group.alb_sg.id]
-
-  # FIX: must be 2 AZ subnets
-  subnets = local.selected_subnets
+  subnets         = local.selected_subnets
 }
 
 # -------------------------
@@ -117,11 +101,7 @@ resource "aws_lb_target_group" "tg" {
   vpc_id   = data.aws_vpc.default.id
 
   health_check {
-    path                = "/"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 3
-    unhealthy_threshold = 3
+    path = "/"
   }
 }
 
@@ -149,22 +129,17 @@ resource "aws_launch_template" "lt" {
 
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
 
-  metadata_options {
-    http_tokens = "required"
-  }
-
-  user_data = base64encode("#!/bin/bash\nyum update -y\nyum install -y httpd\necho 'Hello from ASG' > /var/www/html/index.html\nsystemctl start httpd\nsystemctl enable httpd\n")
+  user_data = base64encode("#!/bin/bash\nyum install -y httpd\necho 'Hello' > /var/www/html/index.html\nsystemctl start httpd\n")
 }
 
 # -------------------------
 # AUTO SCALING GROUP
 # -------------------------
 resource "aws_autoscaling_group" "asg" {
-  desired_capacity = 2
-  min_size         = 2
-  max_size         = 4
+  desired_capacity    = 2
+  min_size            = 2
+  max_size            = 4
 
-  # FIX: same subnets as ALB
   vpc_zone_identifier = local.selected_subnets
 
   launch_template {
