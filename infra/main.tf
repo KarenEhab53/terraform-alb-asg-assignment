@@ -1,19 +1,47 @@
 # -------------------------
-# DEFAULT VPC + SUBNETS
+# PROVIDER
+# -------------------------
+provider "aws" {
+  region = "us-east-1"
+}
+
+# -------------------------
+# DEFAULT VPC
 # -------------------------
 data "aws_vpc" "default" {
   default = true
 }
 
-data "aws_subnets" "default" {
+# -------------------------
+# GET ALL SUBNETS IN VPC
+# -------------------------
+data "aws_subnets" "all" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
 }
 
+# Get details of each subnet (to read AZs)
+data "aws_subnet" "details" {
+  for_each = toset(data.aws_subnets.all.ids)
+  id       = each.value
+}
+
 # -------------------------
-# AMI
+# PICK 2 DIFFERENT AZ SUBNETS (FIX FOR ALB)
+# -------------------------
+locals {
+  az_map = {
+    for s in data.aws_subnet.details :
+    s.availability_zone => s.id
+  }
+
+  selected_subnets = slice(values(local.az_map), 0, 2)
+}
+
+# -------------------------
+# AMI (Amazon Linux 2)
 # -------------------------
 data "aws_ami" "amazon_linux" {
   most_recent = true
@@ -67,13 +95,16 @@ resource "aws_security_group" "ec2_sg" {
 }
 
 # -------------------------
-# ALB
+# APPLICATION LOAD BALANCER
 # -------------------------
 resource "aws_lb" "alb" {
   name               = "assignment-alb"
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  subnets            = data.aws_subnets.default.ids
+
+  security_groups = [aws_security_group.alb_sg.id]
+
+  # FIX: must be 2 AZ subnets
+  subnets = local.selected_subnets
 }
 
 # -------------------------
@@ -122,19 +153,19 @@ resource "aws_launch_template" "lt" {
     http_tokens = "required"
   }
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
-    html_content = file("${path.module}/index.html")
-  }))
+  user_data = base64encode("#!/bin/bash\nyum update -y\nyum install -y httpd\necho 'Hello from ASG' > /var/www/html/index.html\nsystemctl start httpd\nsystemctl enable httpd\n")
 }
 
 # -------------------------
 # AUTO SCALING GROUP
 # -------------------------
 resource "aws_autoscaling_group" "asg" {
-  desired_capacity    = 2
-  min_size            = 2
-  max_size            = 4
-  vpc_zone_identifier = data.aws_subnets.default.ids
+  desired_capacity = 2
+  min_size         = 2
+  max_size         = 4
+
+  # FIX: same subnets as ALB
+  vpc_zone_identifier = local.selected_subnets
 
   launch_template {
     id      = aws_launch_template.lt.id
