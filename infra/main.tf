@@ -1,32 +1,19 @@
-
-
 # -------------------------
 # GET AVAILABLE AZs
 # -------------------------
-data "aws_availability_zones" "available" {}
+data "aws_availability_zones" "available" {
+  state = "available"
+}
 
 # -------------------------
-# GET SUBNETS PER AZ (SAFE + RELIABLE)
+# GET DEFAULT VPC
 # -------------------------
 data "aws_vpc" "default" {
   default = true
 }
 
-# Get ALL real subnets in the VPC
-data "aws_subnets" "all" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
-# IMPORTANT: use ONLY existing subnet IDs
-locals {
-  selected_subnets = data.aws_subnets.all.ids
-}
-
 # -------------------------
-# AMI
+# GET AMI
 # -------------------------
 data "aws_ami" "amazon_linux" {
   most_recent = true
@@ -34,8 +21,35 @@ data "aws_ami" "amazon_linux" {
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*"]
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
   }
+}
+
+# -------------------------
+# GET ONE SUBNET PER AZ
+# This guarantees multi-AZ coverage for the ALB
+# -------------------------
+data "aws_subnets" "per_az" {
+  for_each = toset(data.aws_availability_zones.available.names)
+
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+
+  filter {
+    name   = "availabilityZone"
+    values = [each.key]
+  }
+}
+
+locals {
+  # Pick one subnet ID per AZ, then collect into a list
+  selected_subnets = [
+    for az, subnet_data in data.aws_subnets.per_az :
+    subnet_data.ids[0]
+    if length(subnet_data.ids) > 0
+  ]
 }
 
 # -------------------------
@@ -85,10 +99,9 @@ resource "aws_security_group" "ec2_sg" {
 resource "aws_lb" "alb" {
   name               = "assignment-alb"
   load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
 
-  security_groups = [aws_security_group.alb_sg.id]
-
-  # MUST use real subnets only
+  # Now guaranteed to have subnets across multiple AZs
   subnets = local.selected_subnets
 }
 
@@ -124,31 +137,26 @@ resource "aws_lb_listener" "listener" {
 # LAUNCH TEMPLATE
 # -------------------------
 resource "aws_launch_template" "lt" {
-  name_prefix   = "assignment-lt"
+  name_prefix   = "assignment-lt-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = "t3.micro"
 
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
 
-  user_data = base64encode(<<EOF
-#!/bin/bash
-yum update -y
-yum install -y httpd
-echo "Hello from ASG" > /var/www/html/index.html
-systemctl start httpd
-systemctl enable httpd
-EOF
-  )
+  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+    html_content = file("${path.module}/index.html")
+  }))
 }
 
 # -------------------------
 # AUTO SCALING GROUP
 # -------------------------
 resource "aws_autoscaling_group" "asg" {
-  desired_capacity = 2
-  min_size         = 2
-  max_size         = 4
+  desired_capacity    = 2
+  min_size            = 2
+  max_size            = 4
 
+  # Same multi-AZ subnets used for the ALB
   vpc_zone_identifier = local.selected_subnets
 
   launch_template {
@@ -157,6 +165,5 @@ resource "aws_autoscaling_group" "asg" {
   }
 
   target_group_arns = [aws_lb_target_group.tg.arn]
-
   health_check_type = "ELB"
 }
