@@ -1,18 +1,4 @@
 # -------------------------
-# GET AVAILABLE AZs
-# -------------------------
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-# -------------------------
-# GET DEFAULT VPC
-# -------------------------
-data "aws_vpc" "default" {
-  default = true
-}
-
-# -------------------------
 # GET AMI
 # -------------------------
 data "aws_ami" "amazon_linux" {
@@ -26,23 +12,27 @@ data "aws_ami" "amazon_linux" {
 }
 
 # -------------------------
-# GET ALL SUBNETS IN DEFAULT VPC
+# USE EXISTING ASSIGNMENT VPC
+# -------------------------
+data "aws_vpc" "default" {
+  filter {
+    name   = "tag:Name"
+    values = ["assignment-vpc"]
+  }
+}
+
+# -------------------------
+# GET ALL SUBNETS IN ASSIGNMENT VPC
 # -------------------------
 data "aws_subnets" "all" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
-
-  filter {
-    name   = "defaultForAz"
-    values = ["true"]
-  }
 }
 
 locals {
-  # Take the first 2 default subnets (one per AZ by definition)
-  selected_subnets = slice(tolist(data.aws_subnets.all.ids), 0, 2)
+  selected_subnets = tolist(data.aws_subnets.all.ids)
 }
 
 # -------------------------
