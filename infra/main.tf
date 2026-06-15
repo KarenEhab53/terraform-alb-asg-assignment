@@ -13,25 +13,20 @@ data "aws_availability_zones" "available" {}
 # -------------------------
 # GET SUBNETS PER AZ (SAFE + RELIABLE)
 # -------------------------
-data "aws_subnet" "by_az" {
-  for_each = toset(data.aws_availability_zones.available.names)
+data "aws_vpc" "default" {
+  default = true
+}
 
+data "aws_subnets" "all" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
-
-  filter {
-    name   = "availability-zone"
-    values = [each.value]
-  }
 }
 
+# Get real existing subnets only (NO fake AZ assumptions)
 locals {
-  # Always returns 2+ subnets in different AZs (if available)
-  selected_subnets = [
-    for s in data.aws_subnet.by_az : s.id
-  ]
+  selected_subnets = data.aws_subnets.all.ids
 }
 
 # -------------------------
