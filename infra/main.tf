@@ -23,7 +23,12 @@ locals {
     s.availability_zone => s.id
   }
 
-  selected_subnets = slice(values(local.az_map), 0, 2)
+  az_list = values(local.az_map)
+
+  # SAFE: take up to 2 subnets without crashing
+  selected_subnets = length(local.az_list) >= 2
+    ? slice(local.az_list, 0, 2)
+    : local.az_list
 }
 
 # -------------------------
